@@ -23,6 +23,31 @@ function GeoMap(props) {
   const [sideDistance, setSideDistance] = useState([]);
   const [toggle, setToggle] = useState(false);
   const [buttonS, setButtonS] = useState(false);
+  const [distanceToinitial, setDistancetoInitial] = useState([]);
+
+  useEffect(() => {
+    getLocation();
+  }, []);
+
+  useEffect(() => {
+    console.log("side distences: ", sideDistance);
+    if (sideDistance.length >= 2) {
+      calculateDistanceToInitial(markerList);
+    }
+  }, [sideDistance]);
+
+  useEffect(() => {
+    console.log("markerList on add:", markerList);
+    setButtonS(false);
+    calculateDistance(markerList);
+  }, [markerList]);
+
+  useEffect(() => {
+    console.log("distance to initial point", distanceToinitial);
+    if (distanceToinitial.length >= 1) {
+      calculateAreaOfTriangle();
+    }
+  }, [distanceToinitial]);
 
   // function randomColor() {
   //   return `#${Math.floor(Math.random() * 16777215)
@@ -30,6 +55,7 @@ function GeoMap(props) {
   //     .padStart(6, 0)}`;
   // }
 
+  //get current loaction
   const getLocation = async () => {
     try {
       let { status } = await Location.requestPermissionsAsync();
@@ -63,20 +89,7 @@ function GeoMap(props) {
     }
   };
 
-  useEffect(() => {
-    getLocation();
-  }, []);
-
-  useEffect(() => {
-    console.log("***", sideDistance);
-  }, [sideDistance]);
-
-  useEffect(() => {
-    console.log("markerList on add:", markerList);
-    setButtonS(false);
-    calculateDistance(markerList);
-  }, [markerList]);
-
+  //add marker
   const addMarker = async () => {
     setButtonS(true);
     try {
@@ -101,19 +114,21 @@ function GeoMap(props) {
           // color: randomColor(),
         },
       ]);
-      // console.log("markerList on add:", markerList);
-      // calculateDistance(markerList);
     } catch (error) {
       console.log("error", error);
     }
   };
 
+  //remove marker
   const removeMarker = () => {
     if (markerList.length >= 1) {
       let dist = sideDistance;
       dist.pop();
       setSideDistance(dist);
-      console.log("--", sideDistance);
+
+      let di = distanceToinitial;
+      di.pop();
+      setDistancetoInitial(di);
     }
     let data = markerList;
     data.pop();
@@ -121,6 +136,33 @@ function GeoMap(props) {
     setToggle(!toggle);
     setmarkerList(data);
     console.log("onREmove :", markerList);
+  };
+
+  const calculateDistanceToInitial = (data) => {
+    let markerLength = data.length - 1;
+    let lat1 = data[0].latlang.latitude;
+    let lon1 = data[0].latlang.longitude;
+    let lat2 = data[markerLength].latlang.latitude;
+    let lon2 = data[markerLength].latlang.longitude;
+    let distanceId = sideDistance.length - 1;
+
+    let dLat = deg2rad(lat2 - lat1); // deg2rad below
+    let dLon = deg2rad(lon2 - lon1);
+
+    let a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(deg2rad(lat1)) *
+        Math.cos(deg2rad(lat2)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    let d = R * c; // Distance in km
+    let dm = d * 1000; // Distance in m
+    setDistancetoInitial([
+      ...distanceToinitial,
+      { distance: dm, id: distanceId },
+    ]);
   };
 
   const calculateDistance = (data) => {
@@ -133,6 +175,7 @@ function GeoMap(props) {
       let lon2 = data[markerLength].latlang.longitude;
       console.log("latlan1:", lat1, lon1);
       console.log("latlan2:", lat2, lon2);
+      let distanceId = markerLength;
 
       let dLat = deg2rad(lat2 - lat1); // deg2rad below
       let dLon = deg2rad(lon2 - lon1);
@@ -148,12 +191,37 @@ function GeoMap(props) {
       let d = R * c; // Distance in km
       let dm = d * 1000; // Distance in m
       console.log("**********************distance**********", d, dm);
-      setSideDistance([...sideDistance, { d }]);
+      setSideDistance([...sideDistance, { distance: dm, id: distanceId }]);
     }
   };
+
   function deg2rad(deg) {
     return deg * (Math.PI / 180);
   }
+
+  const calculateAreaOfTriangle = () => {
+    //length of
+    //dI = 1 or 1+
+    //sD = 2 or 2+
+
+    let Is = sideDistance.length - 1;
+    let a, b, c;
+    if (distanceToinitial.length === 1) {
+      a = sideDistance[Is].distance;
+      b = sideDistance[Is - 1].distance;
+      c = distanceToinitial[distanceToinitial.length - 1].distance;
+      console.log(a, b, c);
+    } else {
+      a = sideDistance[Is].distance;
+      // b = sideDistance[Is - 1].distance;
+      b = distanceToinitial[distanceToinitial.length - 2].distance;
+      c = distanceToinitial[distanceToinitial.length - 1].distance;
+    }
+
+    let s = (a + b + c) / 2;
+    let area = Math.sqrt(s * (s - a) * (s - b) * (s - c));
+    console.log("area:", area);
+  };
   return (
     <View style={styles.container}>
       {location ? (
@@ -171,8 +239,7 @@ function GeoMap(props) {
           followsUserLocation={true}
           showsMyLocationButton={true}
           showsCompass={true}
-
-          // onPress={(e) => console.log(e.nativeEvent.coordinate)}
+          onLongPress={(e) => console.log(e.nativeEvent.coordinate)}
           // onRegionChange={(data) => console.log(data)}
         >
           {toggle
@@ -199,39 +266,58 @@ function GeoMap(props) {
         </MapView>
       ) : null}
 
-      <TouchableOpacity
+      <View
         style={{
-          width: 100,
-          height: 40,
-          backgroundColor: "green",
           position: "absolute",
+          flexDirection: "row-reverse",
+          width: "100%",
           bottom: 25,
-          right: "20%",
-          justifyContent: "center",
           alignItems: "center",
-          borderRadius: 15,
+          justifyContent: "space-around",
         }}
-        onPress={() => addMarker()}
-        disabled={buttonS}
       >
-        <Text>ADD</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={{
-          width: 100,
-          height: 40,
-          backgroundColor: "green",
-          position: "absolute",
-          bottom: 25,
-          left: "20%",
-          justifyContent: "center",
-          alignItems: "center",
-          borderRadius: 15,
-        }}
-        onPress={() => removeMarker()}
-      >
-        <Text>REMOVE</Text>
-      </TouchableOpacity>
+        {/* <TouchableOpacity
+          style={{
+            width: 100,
+            height: 40,
+            backgroundColor: "green",
+            justifyContent: "center",
+            alignItems: "center",
+            borderRadius: 15,
+            left: 0,
+          }}
+        >
+          <Text>FINISH</Text>
+        </TouchableOpacity> */}
+
+        <TouchableOpacity
+          style={{
+            width: 100,
+            height: 40,
+            backgroundColor: "green",
+            justifyContent: "center",
+            alignItems: "center",
+            borderRadius: 15,
+          }}
+          onPress={() => addMarker()}
+          disabled={buttonS}
+        >
+          <Text>ADD</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{
+            width: 100,
+            height: 40,
+            backgroundColor: "green",
+            justifyContent: "center",
+            alignItems: "center",
+            borderRadius: 15,
+          }}
+          onPress={() => removeMarker()}
+        >
+          <Text>REMOVE</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
