@@ -6,54 +6,52 @@ import {
   Dimensions,
   TouchableOpacity,
 } from "react-native";
-import MapView, { Marker, Polyline } from "react-native-maps";
+import MapView, { Marker, Polygon, Polyline } from "react-native-maps";
 import * as Location from "expo-location";
-// import Marker from "../Components/Marker";
 
 const R = 6371; //Radius of the earth in km
-// const { width, height } = Dimensions.get("window");
-// const ASPECT_RATIO = width / height;
-// const LATITUDE_DELTA = 0.0922;
-// const LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
 
 function GeoMap(props) {
   const [location, setLocation] = useState(null);
   const [markerList, setmarkerList] = useState([]);
   const [markerList2, setmarkerList2] = useState([]);
-  const [sideDistance, setSideDistance] = useState([]);
   const [toggle, setToggle] = useState(false);
   const [buttonS, setButtonS] = useState(false);
-  const [distanceToinitial, setDistancetoInitial] = useState([]);
+
+  const [areaOfPolygon, setAreaofPolygon] = useState(0);
+  const [latlon, setLatlon] = useState([]);
+  const [sateliteView, setSatliteView] = useState(false);
+  const [polylinedata, setPolylinedata] = useState([]);
 
   useEffect(() => {
     getLocation();
   }, []);
 
   useEffect(() => {
-    console.log("side distences: ", sideDistance);
-    if (sideDistance.length >= 2) {
-      calculateDistanceToInitial(markerList);
-    }
-  }, [sideDistance]);
-
-  useEffect(() => {
-    console.log("markerList on add:", markerList);
+    // console.log("markerList on add:", markerList);
     setButtonS(false);
-    calculateDistance(markerList);
+    if (markerList.length > 0) {
+      let l = latlon;
+      l.push([
+        markerList[markerList.length - 1].latlang.latitude,
+        markerList[markerList.length - 1].latlang.longitude,
+      ]);
+      // console.log("array to find area", l);
+      setLatlon(l);
+
+      setPolylinedata([
+        ...polylinedata,
+        {
+          latitude: markerList[markerList.length - 1].latlang.latitude,
+          longitude: markerList[markerList.length - 1].latlang.longitude,
+        },
+      ]);
+    }
   }, [markerList]);
 
   useEffect(() => {
-    console.log("distance to initial point", distanceToinitial);
-    if (distanceToinitial.length >= 1) {
-      calculateAreaOfTriangle();
-    }
-  }, [distanceToinitial]);
-
-  // function randomColor() {
-  //   return `#${Math.floor(Math.random() * 16777215)
-  //     .toString(16)
-  //     .padStart(6, 0)}`;
-  // }
+    console.log("a", polylinedata);
+  }, [polylinedata]);
 
   //get current loaction
   const getLocation = async () => {
@@ -65,24 +63,24 @@ function GeoMap(props) {
       }
 
       let location = await Location.getCurrentPositionAsync({});
-      setmarkerList([
-        {
-          latlang: {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          },
-          // color: randomColor(),
-        },
-      ]);
-      setmarkerList2([
-        {
-          latlang: {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          },
-          // color: randomColor(),
-        },
-      ]);
+      // setmarkerList([
+      //   {
+      //     latlang: {
+      //       latitude: location.coords.latitude,
+      //       longitude: location.coords.longitude,
+      //     },
+      //     // color: randomColor(),
+      //   },
+      // ]);
+      // setmarkerList2([
+      //   {
+      //     latlang: {
+      //       latitude: location.coords.latitude,
+      //       longitude: location.coords.longitude,
+      //     },
+      //     // color: randomColor(),
+      //   },
+      // ]);
       setLocation(location);
     } catch (error) {
       console.log("error:", error);
@@ -119,113 +117,97 @@ function GeoMap(props) {
     }
   };
 
+  const onLOngPressOnMap = (e) => {
+    console.log(e.nativeEvent.coordinate);
+    setmarkerList([
+      ...markerList,
+      {
+        latlang: {
+          latitude: e.nativeEvent.coordinate.latitude,
+          longitude: e.nativeEvent.coordinate.longitude,
+        },
+        // color: randomColor(),
+      },
+    ]);
+    setmarkerList2([
+      ...markerList,
+      {
+        latlang: {
+          latitude: e.nativeEvent.coordinate.latitude,
+          longitude: e.nativeEvent.coordinate.longitude,
+        },
+        // color: randomColor(),
+      },
+    ]);
+  };
+
   //remove marker
   const removeMarker = () => {
-    if (markerList.length >= 1) {
-      let dist = sideDistance;
-      dist.pop();
-      setSideDistance(dist);
+    setAreaofPolygon(0);
+    let p = polylinedata;
+    p.pop();
+    setPolylinedata(p);
+    console.log(p);
 
-      let di = distanceToinitial;
-      di.pop();
-      setDistancetoInitial(di);
-    }
+    let l = latlon;
+    l.pop();
+    setLatlon(l);
+    // console.log(l);
+
     let data = markerList;
     data.pop();
     setmarkerList2(data);
     setToggle(!toggle);
     setmarkerList(data);
-    console.log("onREmove :", markerList);
+    // console.log("onREmove :", markerList);
   };
 
-  const calculateDistanceToInitial = (data) => {
-    let markerLength = data.length - 1;
-    let lat1 = data[0].latlang.latitude;
-    let lon1 = data[0].latlang.longitude;
-    let lat2 = data[markerLength].latlang.latitude;
-    let lon2 = data[markerLength].latlang.longitude;
-    let distanceId = sideDistance.length - 1;
+  function latlontocart(data) {
+    let latAnchor = data[0][0];
+    let lonAnchor = data[0][1];
+    let x = 0;
+    let y = 0;
+    let R = 6378137; //radius of earth
 
-    let dLat = deg2rad(lat2 - lat1); // deg2rad below
-    let dLon = deg2rad(lon2 - lon1);
+    let pos = [];
 
-    let a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(deg2rad(lat1)) *
-        Math.cos(deg2rad(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    for (let i = 0; i < latlon.length; i++) {
+      let xPos =
+        (data[i][1] - lonAnchor) * ConvertToRadian(R) * Math.cos(latAnchor);
+      let yPos = (data[i][0] - latAnchor) * ConvertToRadian(R);
 
-    let d = R * c; // Distance in km
-    let dm = d * 1000; // Distance in m
-    setDistancetoInitial([
-      ...distanceToinitial,
-      { distance: dm, id: distanceId },
-    ]);
-  };
-
-  const calculateDistance = (data) => {
-    let markerLength = data.length - 1;
-    let markerLength2 = data.length - 2;
-    if (data.length >= 2) {
-      let lat1 = data[markerLength2].latlang.latitude;
-      let lon1 = data[markerLength2].latlang.longitude;
-      let lat2 = data[markerLength].latlang.latitude;
-      let lon2 = data[markerLength].latlang.longitude;
-      console.log("latlan1:", lat1, lon1);
-      console.log("latlan2:", lat2, lon2);
-      let distanceId = markerLength;
-
-      let dLat = deg2rad(lat2 - lat1); // deg2rad below
-      let dLon = deg2rad(lon2 - lon1);
-
-      let a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(deg2rad(lat1)) *
-          Math.cos(deg2rad(lat2)) *
-          Math.sin(dLon / 2) *
-          Math.sin(dLon / 2);
-      let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-      let d = R * c; // Distance in km
-      let dm = d * 1000; // Distance in m
-      console.log("**********************distance**********", d, dm);
-      setSideDistance([...sideDistance, { distance: dm, id: distanceId }]);
+      pos.push(xPos, yPos);
     }
-  };
-
-  function deg2rad(deg) {
-    return deg * (Math.PI / 180);
+    return pos;
   }
 
-  const calculateAreaOfTriangle = () => {
-    //length of
-    //dI = 1 or 1+
-    //sD = 2 or 2+
+  function ConvertToRadian(input) {
+    return (input * Math.PI) / 180;
+  }
 
-    let Is = sideDistance.length - 1;
-    let a, b, c;
-    if (distanceToinitial.length === 1) {
-      a = sideDistance[Is].distance;
-      b = sideDistance[Is - 1].distance;
-      c = distanceToinitial[distanceToinitial.length - 1].distance;
-      console.log(a, b, c);
-    } else {
-      a = sideDistance[Is].distance;
-      // b = sideDistance[Is - 1].distance;
-      b = distanceToinitial[distanceToinitial.length - 2].distance;
-      c = distanceToinitial[distanceToinitial.length - 1].distance;
+  function GetArea(polygon) {
+    const length = polygon.length;
+
+    let sum = 0;
+
+    for (let i = 0; i < length; i += 2) {
+      sum +=
+        polygon[i] * polygon[(i + 3) % length] -
+        polygon[i + 1] * polygon[(i + 2) % length];
     }
 
-    let s = (a + b + c) / 2;
-    let area = Math.sqrt(s * (s - a) * (s - b) * (s - c));
-    console.log("area:", area);
-  };
+    console.log(Math.abs(sum) * 0.5, "square metres");
+    setAreaofPolygon(Math.abs(sum) * 0.5);
+  }
+
   return (
     <View style={styles.container}>
       {location ? (
         <MapView
+          showsUserLocation={true}
+          followsUserLocation={true}
+          showsMyLocationButton={true}
+          showsCompass={true}
           style={styles.map}
           initialRegion={{
             latitude: location.coords.latitude,
@@ -235,13 +217,23 @@ function GeoMap(props) {
             latitudeDelta: 0.0,
             longitudeDelta: 0.0,
           }}
-          showsUserLocation={true}
-          followsUserLocation={true}
-          showsMyLocationButton={true}
-          showsCompass={true}
-          onLongPress={(e) => console.log(e.nativeEvent.coordinate)}
-          // onRegionChange={(data) => console.log(data)}
+          mapType={sateliteView ? "satellite" : "standard"}
+          onLongPress={(e) => onLOngPressOnMap(e)}
         >
+          {polylinedata.length > 0 ? (
+            <Polygon
+              coordinates={[
+                ...polylinedata,
+                {
+                  latitude: markerList[0].latlang.latitude,
+                  longitude: markerList[0].latlang.longitude,
+                },
+              ]}
+              strokeColor="red" // fallback for when `strokeColors` is not supported by the map-provider
+              strokeWidth={2}
+              fillColor="rgba(255,0,0,0.2)"
+            />
+          ) : null}
           {toggle
             ? markerList2.map((marker, index) => (
                 <>
@@ -266,6 +258,33 @@ function GeoMap(props) {
         </MapView>
       ) : null}
 
+      <TouchableOpacity
+        style={{
+          width: 60,
+          height: 40,
+          backgroundColor: "dodgerblue",
+          position: "absolute",
+          justifyContent: "center",
+          alignItems: "center",
+          borderRadius: 10,
+          right: 30,
+          top: 80,
+        }}
+        onPress={() => setSatliteView(!sateliteView)}
+      >
+        <Text>{sateliteView ? "satellite" : "standard"}</Text>
+      </TouchableOpacity>
+      <Text
+        style={{
+          position: "absolute",
+          bottom: 80,
+          fontSize: 30,
+          left: 30,
+          color: "red",
+        }}
+      >
+        Area : {areaOfPolygon}
+      </Text>
       <View
         style={{
           position: "absolute",
@@ -276,7 +295,7 @@ function GeoMap(props) {
           justifyContent: "space-around",
         }}
       >
-        {/* <TouchableOpacity
+        <TouchableOpacity
           style={{
             width: 100,
             height: 40,
@@ -286,9 +305,14 @@ function GeoMap(props) {
             borderRadius: 15,
             left: 0,
           }}
+          onPress={() => {
+            latlon.length === 0
+              ? console.log("error")
+              : GetArea(latlontocart(latlon));
+          }}
         >
-          <Text>FINISH</Text>
-        </TouchableOpacity> */}
+          <Text>AREA</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={{
@@ -330,8 +354,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   map: {
-    width: Dimensions.get("window").width,
-    height: Dimensions.get("window").height,
+    // width: Dimensions.get("window").width,
+    // height: Dimensions.get("window").height,
+    ...StyleSheet.absoluteFillObject,
   },
 });
 
